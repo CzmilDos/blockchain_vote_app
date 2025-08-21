@@ -3,26 +3,32 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vote on‑chain — Demo</title>
+  <title>Vote on-chain — Système temporelle</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
     .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #e5e7eb; cursor: pointer; }
-    input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #e5e7eb; cursor: pointer; background: #fff; }
+    input[type="text"], input[type="number"] { width: 100%; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; }
     .muted { color: #6b7280; }
-    .owner-actions { display: flex; gap: 8px; }
+    .owner-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
     .hidden { display: none; }
     .ok { color: #065f46; }
     .err { color: #7f1d1d; }
+    .warning { color: #92400e; }
     .badge { padding: 2px 8px; border-radius: 999px; border: 1px solid #e5e7eb; }
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0; }
+    .status-item { background: #f9fafb; padding: 12px; border-radius: 8px; }
+    .status-label { font-size: 0.9em; color: #6b7280; margin-bottom: 4px; }
+    .status-value { font-weight: bold; }
+    .vote-ended-message { color: #dc2626; font-weight: bold; font-size: 1.05em; margin: 12px 0; }
+    .info-note { margin-top: 8px; color: #374151; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:8px; padding:8px 10px; }
   </style>
-  <!-- Ethers v6 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js"></script>
 </head>
 <body>
-  <h1>🗳️ Vote on‑chain — Demo</h1>
+  <h1>🗳️ Vote on-chain — Système temporelle</h1>
 
   <div class="card">
     <h2>1) Connexion</h2>
@@ -34,188 +40,349 @@
     <h2>2) Contrat</h2>
     <label>Adresse du contrat :</label>
     <input id="contractAddress" type="text" placeholder="0x..." />
-    <div style="margin-top:8px; display:flex; gap:8px;">
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
       <button id="loadBtn">Charger</button>
       <span id="status" class="badge muted">—</span>
     </div>
     <p id="ownerInfo" class="muted"></p>
+  </div>
+
+  <div class="card">
+    <h2>3) État du vote</h2>
+    <div class="status-grid">
+      <div class="status-item">
+        <div class="status-label">État</div>
+        <div id="voteState" class="status-value muted">—</div>
+      </div>
+      <div class="status-item">
+        <div class="status-label">Temps restant</div>
+        <div id="timeRemaining" class="status-value muted">—</div>
+      </div>
+      <div class="status-item">
+        <div class="status-label">Début</div>
+        <div id="startTime" class="status-value muted">—</div>
+      </div>
+      <div class="status-item">
+        <div class="status-label">Fin</div>
+        <div id="endTime" class="status-value muted">—</div>
+      </div>
+    </div>
+
     <div id="ownerActions" class="owner-actions hidden">
-      <button id="openBtn">Ouvrir le vote</button>
-      <button id="closeBtn">Fermer le vote</button>
+      <input id="voteDuration" type="number" value="3600" min="60" max="604800" />
+      <button id="startBtn">Démarrer le vote</button>
     </div>
   </div>
 
   <div class="card">
-    <h2>3) Voter</h2>
+    <h2>4) Voter</h2>
     <div id="voteForm">Charge le contrat pour voir les candidats.</div>
     <div style="margin-top:8px;">
       <button id="voteBtn" class="hidden">Voter</button>
-      <span id="voteState" class="muted"></span>
+      <span id="voteMessage" class="muted"></span>
     </div>
     <p id="errors" class="err"></p>
   </div>
 
   <div class="card">
-    <h2>4) Résultats</h2>
+    <h2>5) Résultats</h2>
     <table>
-      <thead><tr><th>Candidat</th><th>Votes</th></tr></thead>
-      <tbody id="resultsBody"><tr><td colspan="2" class="muted">—</td></tr></tbody>
+      <thead><tr><th>Candidat</th><th>Votes</th><th>Pourcentage</th></tr></thead>
+      <tbody id="resultsBody"><tr><td colspan="3" class="muted">—</td></tr></tbody>
     </table>
   </div>
 
 <script>
-  // ===== ABI minimal pour la dapp =====
-  const ABI = [
-    {"type":"function","name":"candidates","inputs":[],"outputs":[{"name":"","type":"string[]"}],"stateMutability":"view"},
-    {"type":"function","name":"candidatesCount","inputs":[],"outputs":[{"name":"","type":"uint256"}],"stateMutability":"view"},
-    {"type":"function","name":"getResults","inputs":[],"outputs":[{"name":"counts","type":"uint256[]"}],"stateMutability":"view"},
-    {"type":"function","name":"hasVoted","inputs":[{"name":"","type":"address"}],"outputs":[{"name":"","type":"bool"}],"stateMutability":"view"},
-    {"type":"function","name":"owner","inputs":[],"outputs":[{"name":"","type":"address"}],"stateMutability":"view"},
-    {"type":"function","name":"votingOpen","inputs":[],"outputs":[{"name":"","type":"bool"}],"stateMutability":"view"},
-    {"type":"function","name":"vote","inputs":[{"name":"candidateIndex","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-    {"type":"function","name":"openVoting","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
-    {"type":"function","name":"closeVoting","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
-    {"type":"event","name":"Voted","inputs":[{"name":"voter","type":"address","indexed":true},{"name":"candidateIndex","type":"uint256","indexed":true}],"anonymous":false},
-    {"type":"event","name":"VotingOpened","inputs":[],"anonymous":false},
-    {"type":"event","name":"VotingClosed","inputs":[],"anonymous":false},
-  ];
+/* ===== ABI (contrat SimpleVote fourni) ===== */
+const ABI = [
+  {"type":"function","name":"candidates","inputs":[],"outputs":[{"type":"string[]"}],"stateMutability":"view"},
+  {"type":"function","name":"candidatesCount","inputs":[],"outputs":[{"type":"uint256"}],"stateMutability":"view"},
+  {"type":"function","name":"getResults","inputs":[],"outputs":[{"type":"uint256[]"}],"stateMutability":"view"},
+  {"type":"function","name":"hasVoted","inputs":[{"type":"address"}],"outputs":[{"type":"bool"}],"stateMutability":"view"},
+  {"type":"function","name":"owner","inputs":[],"outputs":[{"type":"address"}],"stateMutability":"view"},
 
-  let provider, signer, contract;
-  let currentAccount;
-  let chosenIndex = null;
+  {"type":"function","name":"isVotingOpen","inputs":[],"outputs":[{"type":"bool"}],"stateMutability":"view"},
+  {"type":"function","name":"getVoteStatus","inputs":[],"outputs":[
+    {"name":"started","type":"bool"},
+    {"name":"ended","type":"bool"},
+    {"name":"startTime","type":"uint256"},
+    {"name":"endTime","type":"uint256"},
+    {"name":"currentTime","type":"uint256"},
+    {"name":"remainingTime","type":"uint256"}],"stateMutability":"view"},
 
-  const $ = (id) => document.getElementById(id);
+  {"type":"function","name":"vote","inputs":[{"name":"candidateIndex","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"startVote","inputs":[{"name":"durationInSeconds","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+  {"type":"function","name":"finalizeVote","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
 
-  async function connect() {
-    if (!window.ethereum) { alert('Installe MetaMask.'); return; }
-    provider = new ethers.BrowserProvider(window.ethereum);
-    const accounts = await provider.send('eth_requestAccounts', []);
-    currentAccount = accounts[0];
-    signer = await provider.getSigner();
-    $('account').textContent = `Connecté: ${currentAccount}`;
+  {"type":"event","name":"Voted","inputs":[{"name":"voter","type":"address","indexed":true},{"name":"candidateIndex","type":"uint256","indexed":true}],"anonymous":false},
+  {"type":"event","name":"VoteStarted","inputs":[{"name":"startTime","type":"uint256"},{"name":"endTime","type":"uint256"},{"name":"duration","type":"uint256"}],"anonymous":false},
+  {"type":"event","name":"VoteFinalized","inputs":[{"name":"endTime","type":"uint256"}],"anonymous":false}
+];
+
+/* ===== State ===== */
+let provider, signer, contract;
+let currentAccount = null;
+let timerInterval = null;
+let chainOffsetSec = 0; // décalage horloge locale vs horloge de la chaîne
+
+// cache “global” pour le rendu
+let cachedStarted=false, cachedEnded=false, cachedOpen=false;
+let cachedStart=0n, cachedEnd=0n;
+let isOwnerCached=false;
+
+const $ = id => document.getElementById(id);
+
+/* ===== Utils ===== */
+function prettyError(e){ return e?.shortMessage || e?.message || String(e); }
+function formatTs(ts){ return ts ? new Date(Number(ts)*1000).toLocaleString('fr-FR') : '—'; }
+function nowChainSeconds(){ return BigInt(Math.floor(Date.now()/1000)); }
+function locallyOpen(){ return cachedStarted && !cachedEnded && nowChainSeconds() < cachedEnd && nowChainSeconds() >= cachedStart; }
+
+function notifyEndedMessage() {
+  const container = $('voteForm');
+  if (!container.querySelector('.vote-ended-message')) {
+    container.insertAdjacentHTML('beforeend',
+      '<div class="vote-ended-message">🛑 Le vote est terminé, vous ne pouvez plus voter.</div>');
   }
+}
 
-  async function loadContract() {
-    const addr = $('contractAddress').value.trim();
-    if (!addr) { alert('Entre une adresse de contrat'); return; }
-    try {
-      contract = new ethers.Contract(addr, ABI, signer ?? provider);
+/* ===== Connexion ===== */
+async function connect() {
+  if (!window.ethereum) { alert('Installe MetaMask.'); return; }
+  provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send('eth_requestAccounts', []);
+  signer = await provider.getSigner();
+  currentAccount = await signer.getAddress();
+  $('account').textContent = `Connecté: ${currentAccount}`;
+
+  // Écoute les changements compte / réseau
+  if (window.ethereum && window.ethereum.on) {
+    window.ethereum.on('accountsChanged', async (accs) => {
+      currentAccount = accs && accs[0] ? accs[0] : null;
+      try { signer = await provider.getSigner(); } catch { signer = null; }
+      $('account').textContent = currentAccount ? `Connecté: ${currentAccount}` : 'Non connecté';
+      if (timerInterval) clearInterval(timerInterval);
       await refreshState();
-      bindEvents();
-    } catch (e) {
-      showError(e);
-    }
+    });
+    window.ethereum.on('chainChanged', () => location.reload());
   }
+}
 
-  function bindEvents() {
-    if (!contract) return;
-    // MàJ live sur Voted/Open/Close
-    contract.on('Voted', (voter, idx) => { refreshResults(); updateVoteState(); });
-    contract.on('VotingOpened', refreshState);
-    contract.on('VotingClosed', refreshState);
+/* ===== Chargement contrat ===== */
+async function loadContract() {
+  const addr = $('contractAddress').value.trim();
+  if (!addr) { alert('Entre une adresse de contrat'); return; }
+  try {
+    contract = new ethers.Contract(addr, ABI, signer ?? provider);
+    $('status').textContent = 'chargé';
+    await refreshState();
+    bindEvents();
+  } catch (e) { showError(e); }
+}
+
+function bindEvents() {
+  if (!contract) return;
+  contract.on('Voted', () => { refreshResults(); updateVoteState(); });
+  contract.on('VoteStarted', refreshState);
+  contract.on('VoteFinalized', refreshState);
+}
+
+/* ===== Timer ===== */
+function startLocalTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(updateTimer, 1000);
+  updateTimer();
+}
+
+function updateTimer() {
+  // si pas démarré
+  if (!cachedStarted) {
+    $('timeRemaining').textContent = 'Non démarré';
+    $('timeRemaining').className = 'status-value muted';
+    return;
   }
+  // si terminé
+  if (cachedEnded || nowChainSeconds() >= cachedEnd) {
+    $('timeRemaining').textContent = 'Terminé';
+    $('timeRemaining').className = 'status-value err';
+    $('voteState').textContent = 'Terminé';
+    $('voteState').className = 'status-value err';
+    $('voteBtn').disabled = true;
+    document.querySelectorAll('input[name="candidate"]').forEach(i => i.disabled = true);
+    notifyEndedMessage();
+    return;
+  }
+  // en cours
+  const remain = Number(cachedEnd - nowChainSeconds());
+  const h = Math.floor(remain/3600), m = Math.floor((remain%3600)/60), s = remain%60;
+  $('timeRemaining').textContent = `${h}h ${m}m ${s}s`;
+  $('timeRemaining').className = 'status-value ' + (remain < 300 ? 'err' : remain < 1800 ? 'warning' : 'ok');
+}
 
-  async function refreshState() {
-    if (!contract) return;
-    const [owner, open, candidates, results] = await Promise.all([
-      contract.owner(),
-      contract.votingOpen(),
-      contract.candidates(),
-      contract.getResults(),
+/* ===== Rendu principal ===== */
+async function refreshState() {
+  if (!contract) return;
+  try {
+    // On lit l'état mais on ne recale plus l'horloge sur la chaîne
+    const [status, ownerAddr] = await Promise.all([
+      contract.getVoteStatus(),
+      contract.owner()
     ]);
+    const [started, ended, st, et] = status;
 
-    $('status').textContent = open ? 'Ouvert' : 'Fermé';
-    $('status').className = 'badge ' + (open ? 'ok' : 'muted');
+    // mets à jour le cache
+    cachedStarted = started;
+    cachedEnded   = ended;
+    cachedStart   = BigInt(st);
+    cachedEnd     = BigInt(et);
 
-    // Owner UI
-    const isOwner = currentAccount && currentAccount.toLowerCase() === owner.toLowerCase();
-    $('ownerInfo').textContent = `Owner: ${owner}` + (isOwner ? ' (vous)' : '');
-    $('ownerActions').classList.toggle('hidden', !isOwner);
+    const isOpen = await contract.isVotingOpen();
+    cachedOpen = isOpen;
 
-    // Formulaire de vote
-    renderVoteForm(candidates, open);
+    // owner
+    isOwnerCached = !!currentAccount && currentAccount.toLowerCase() === ownerAddr.toLowerCase();
+    $('ownerInfo').textContent = `Owner: ${ownerAddr}` + (isOwnerCached ? ' (vous)' : '');
+    // visible seulement pour l’owner
+    $('ownerActions').classList.toggle('hidden', !isOwnerCached);
+    // et grisé si déjà démarré
+    $('startBtn').disabled = !!cachedStarted;
+    $('voteDuration').disabled = !!cachedStarted;
 
-    // Résultats
-    renderResults(candidates, results);
+    // état texte
+    let stateText='', stateClass='';
+    if (!started) { stateText='En attente'; stateClass='muted'; }
+    else if (ended || nowChainSeconds() >= cachedEnd) { stateText='Terminé'; stateClass='err'; }
+    else if (isOpen) { stateText='En cours'; stateClass='ok'; }
+    else { stateText='Expiré'; stateClass='warning'; }
 
-    // État de l'utilisateur
-    await updateVoteState();
-  }
+    $('voteState').textContent = stateText;
+    $('voteState').className = `status-value ${stateClass}`;
+    $('startTime').textContent = formatTs(st);
+    $('endTime').textContent   = formatTs(et);
 
-  function renderVoteForm(candidates, open) {
-    const container = $('voteForm');
-    container.innerHTML = '';
-    const disabled = !open;
-    candidates.forEach((name, i) => {
-      const id = `cand_${i}`;
-      const row = document.createElement('div');
-      row.innerHTML = `
-        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-          <input type="radio" name="candidate" value="${i}" id="${id}" ${disabled ? 'disabled' : ''} />
-          <span>${i}. ${name}</span>
-        </label>`;
-      container.appendChild(row);
-    });
-    $('voteBtn').classList.toggle('hidden', candidates.length === 0 || disabled);
-
-    container.querySelectorAll('input[name="candidate"]').forEach(el => {
-      el.addEventListener('change', (e) => { chosenIndex = parseInt(e.target.value, 10); });
-    });
-  }
-
-  function renderResults(candidates, results) {
-    const tbody = $('resultsBody');
-    tbody.innerHTML = '';
-    for (let i = 0; i < candidates.length; i++) {
-      const tr = document.createElement('tr');
-      const name = candidates[i];
-      const count = results[i] ? results[i].toString() : '0';
-      tr.innerHTML = `<td>${name}</td><td>${count}</td>`;
-      tbody.appendChild(tr);
-    }
-  }
-
-  async function updateVoteState() {
-    if (!contract || !currentAccount) return;
-    const open = await contract.votingOpen();
-    const voted = await contract.hasVoted(currentAccount);
-    $('voteState').textContent = !open ? 'Le vote est fermé.' : (voted ? 'Vous avez déjà voté.' : 'Vous pouvez voter.');
-    $('voteBtn').disabled = (!open || voted);
-  }
-
-  async function doVote() {
-    $('errors').textContent = '';
-    if (chosenIndex === null) { alert('Choisis un candidat.'); return; }
-    try {
-      const tx = await contract.connect(signer).vote(BigInt(chosenIndex));
-      $('voteState').textContent = 'Transaction envoyée…';
-      await tx.wait();
-      await refreshResults();
-      await updateVoteState();
-      $('voteState').textContent = 'Vote enregistré ✅';
-    } catch (e) { showError(e); }
-  }
-
-  async function refreshResults() {
+    // formulaire + résultats + état utilisateur
     const [cands, res] = await Promise.all([contract.candidates(), contract.getResults()]);
+    renderVoteForm(cands, isOpen);
     renderResults(cands, res);
+    await updateVoteState();
+
+    // timer local
+    startLocalTimer();
+
+  } catch (e) { showError(e); }
+}
+
+/* ===== Formulaire de vote ===== */
+function renderVoteForm(candidates, open) {
+  const container = $('voteForm');
+  container.innerHTML = '';
+
+  if (!cachedStarted) {
+    if (isOwnerCached) {
+      container.innerHTML = '<div class="muted">Le vote n’a pas encore démarré. Définissez une durée puis cliquez sur “Démarrer le vote”.</div>';
+    } else {
+      container.innerHTML = '<div class="muted">Le vote n’a pas encore démarré.</div><div class="info-note">ℹ️ Seul le <strong>owner</strong> peut démarrer le vote.</div>';
+    }
+    $('voteBtn').classList.add('hidden');
+    return;
   }
 
-  async function openVoting() { try { const tx = await contract.connect(signer).openVoting(); await tx.wait(); } catch (e) { showError(e); } }
-  async function closeVoting() { try { const tx = await contract.connect(signer).closeVoting(); await tx.wait(); } catch (e) { showError(e); } }
-
-  function showError(e) {
-    console.error(e);
-    const msg = e?.shortMessage || e?.message || String(e);
-    $('errors').textContent = msg;
+  if (cachedEnded || nowChainSeconds() >= cachedEnd) {
+    $('voteBtn').classList.add('hidden');
+    notifyEndedMessage();
+    return;
   }
 
-  // Bind UI
-  $('connectBtn').onclick = connect;
-  $('loadBtn').onclick = loadContract;
-  $('voteBtn').onclick = doVote;
-  $('openBtn').onclick = openVoting;
-  $('closeBtn').onclick = closeVoting;
+  const disabled = !open;
+  candidates.forEach((name, i) => {
+    const row = document.createElement('div');
+    row.innerHTML = `
+      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+        <input type="radio" name="candidate" value="${i}" ${disabled?'disabled':''} />
+        <span>${i}. ${name}</span>
+      </label>`;
+    container.appendChild(row);
+  });
+  $('voteBtn').classList.toggle('hidden', candidates.length === 0 || disabled);
+  container.querySelectorAll('input[name="candidate"]').forEach(el => {
+    el.addEventListener('change', e => { window.chosenIndex = parseInt(e.target.value, 10); });
+  });
+}
+
+/* ===== Résultats ===== */
+function renderResults(candidates, results) {
+  const tbody = $('resultsBody');
+  tbody.innerHTML = '';
+  const total = results.reduce((s, x) => s + Number(x), 0);
+  for (let i=0; i<candidates.length; i++) {
+    const count = Number(results[i]||0);
+    const pct = total>0 ? ((count/total)*100).toFixed(1) : '0.0';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${candidates[i]}</td><td>${count}</td><td>${pct}%</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+/* ===== État utilisateur ===== */
+async function updateVoteState() {
+  if (!contract || !currentAccount) return;
+  try {
+    const [isOpen, voted] = await Promise.all([contract.isVotingOpen(), contract.hasVoted(currentAccount)]);
+    let msg = '';
+    // if (!cachedStarted) msg = '';
+    if (cachedEnded || nowChainSeconds() >= cachedEnd) msg = 'Le vote est terminé.';
+    else if (!isOpen) msg = 'Le vote n’est pas ouvert.';
+    else if (voted) msg = 'Vote enregistré ✅';
+    else msg = 'Vous pouvez voter.';
+    $('voteMessage').textContent = msg;
+
+    const disableAll = (!isOpen || voted || cachedEnded || nowChainSeconds() >= cachedEnd);
+    $('voteBtn').disabled = disableAll;
+    document.querySelectorAll('input[name="candidate"]').forEach(i => i.disabled = disableAll);
+  } catch(e) { console.error(e); }
+}
+
+/* ===== Actions ===== */
+async function doVote() {
+  $('errors').textContent = '';
+  const chosenIndex = window.chosenIndex ?? null;
+  if (chosenIndex === null) { alert('Choisis un candidat.'); return; }
+  try {
+    const tx = await contract.connect(signer).vote(BigInt(chosenIndex));
+    $('voteMessage').textContent = 'Transaction envoyée…';
+    await tx.wait();
+    await refreshState();
+    if (!locallyOpen()) notifyEndedMessage();
+    $('voteMessage').textContent = 'Vote enregistré ✅';
+  } catch (e) { showError(e); }
+}
+
+async function startVote() {
+  const duration = parseInt($('voteDuration').value, 10);
+  if (!Number.isFinite(duration) || duration < 60 || duration > 604800) {
+    alert('La durée doit être entre 60 secondes et 7 jours.');
+    return;
+  }
+  try {
+    const tx = await contract.connect(signer).startVote(BigInt(duration));
+    $('voteMessage').textContent = 'Démarrage du vote…';
+    await tx.wait();
+    await refreshState();
+    $('voteMessage').textContent = 'Vote démarré ✅';
+  } catch (e) { showError(e); }
+}
+
+/* ===== Helpers ===== */
+function showError(e) {
+  console.error(e);
+  $('errors').textContent = prettyError(e);
+}
+
+/* ===== Bind UI ===== */
+$('connectBtn').onclick = connect;
+$('loadBtn').onclick    = loadContract;
+$('voteBtn').onclick    = doVote;
+$('startBtn').onclick   = startVote;
 </script>
 </body>
 </html>
