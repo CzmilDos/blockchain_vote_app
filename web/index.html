@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vote on‑chain — Demo</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #e5e7eb; cursor: pointer; }
+    input[type="text"] { width: 100%; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; }
+    .muted { color: #6b7280; }
+    .owner-actions { display: flex; gap: 8px; }
+    .hidden { display: none; }
+    .ok { color: #065f46; }
+    .err { color: #7f1d1d; }
+    .badge { padding: 2px 8px; border-radius: 999px; border: 1px solid #e5e7eb; }
+  </style>
+  <!-- Ethers v6 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <h1>🗳️ Vote on‑chain — Demo</h1>
+
+  <div class="card">
+    <h2>1) Connexion</h2>
+    <p id="account" class="muted">Non connecté</p>
+    <button id="connectBtn">Se connecter avec MetaMask</button>
+  </div>
+
+  <div class="card">
+    <h2>2) Contrat</h2>
+    <label>Adresse du contrat :</label>
+    <input id="contractAddress" type="text" placeholder="0x..." />
+    <div style="margin-top:8px; display:flex; gap:8px;">
+      <button id="loadBtn">Charger</button>
+      <span id="status" class="badge muted">—</span>
+    </div>
+    <p id="ownerInfo" class="muted"></p>
+    <div id="ownerActions" class="owner-actions hidden">
+      <button id="openBtn">Ouvrir le vote</button>
+      <button id="closeBtn">Fermer le vote</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3) Voter</h2>
+    <div id="voteForm">Charge le contrat pour voir les candidats.</div>
+    <div style="margin-top:8px;">
+      <button id="voteBtn" class="hidden">Voter</button>
+      <span id="voteState" class="muted"></span>
+    </div>
+    <p id="errors" class="err"></p>
+  </div>
+
+  <div class="card">
+    <h2>4) Résultats</h2>
+    <table>
+      <thead><tr><th>Candidat</th><th>Votes</th></tr></thead>
+      <tbody id="resultsBody"><tr><td colspan="2" class="muted">—</td></tr></tbody>
+    </table>
+  </div>
+
+<script>
+  // ===== ABI minimal pour la dapp =====
+  const ABI = [
+    {"type":"function","name":"candidates","inputs":[],"outputs":[{"name":"","type":"string[]"}],"stateMutability":"view"},
+    {"type":"function","name":"candidatesCount","inputs":[],"outputs":[{"name":"","type":"uint256"}],"stateMutability":"view"},
+    {"type":"function","name":"getResults","inputs":[],"outputs":[{"name":"counts","type":"uint256[]"}],"stateMutability":"view"},
+    {"type":"function","name":"hasVoted","inputs":[{"name":"","type":"address"}],"outputs":[{"name":"","type":"bool"}],"stateMutability":"view"},
+    {"type":"function","name":"owner","inputs":[],"outputs":[{"name":"","type":"address"}],"stateMutability":"view"},
+    {"type":"function","name":"votingOpen","inputs":[],"outputs":[{"name":"","type":"bool"}],"stateMutability":"view"},
+    {"type":"function","name":"vote","inputs":[{"name":"candidateIndex","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
+    {"type":"function","name":"openVoting","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
+    {"type":"function","name":"closeVoting","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
+    {"type":"event","name":"Voted","inputs":[{"name":"voter","type":"address","indexed":true},{"name":"candidateIndex","type":"uint256","indexed":true}],"anonymous":false},
+    {"type":"event","name":"VotingOpened","inputs":[],"anonymous":false},
+    {"type":"event","name":"VotingClosed","inputs":[],"anonymous":false},
+  ];
+
+  let provider, signer, contract;
+  let currentAccount;
+  let chosenIndex = null;
+
+  const $ = (id) => document.getElementById(id);
+
+  async function connect() {
+    if (!window.ethereum) { alert('Installe MetaMask.'); return; }
+    provider = new ethers.BrowserProvider(window.ethereum);
+    const accounts = await provider.send('eth_requestAccounts', []);
+    currentAccount = accounts[0];
+    signer = await provider.getSigner();
+    $('account').textContent = `Connecté: ${currentAccount}`;
+  }
+
+  async function loadContract() {
+    const addr = $('contractAddress').value.trim();
+    if (!addr) { alert('Entre une adresse de contrat'); return; }
+    try {
+      contract = new ethers.Contract(addr, ABI, signer ?? provider);
+      await refreshState();
+      bindEvents();
+    } catch (e) {
+      showError(e);
+    }
+  }
+
+  function bindEvents() {
+    if (!contract) return;
+    // MàJ live sur Voted/Open/Close
+    contract.on('Voted', (voter, idx) => { refreshResults(); updateVoteState(); });
+    contract.on('VotingOpened', refreshState);
+    contract.on('VotingClosed', refreshState);
+  }
+
+  async function refreshState() {
+    if (!contract) return;
+    const [owner, open, candidates, results] = await Promise.all([
+      contract.owner(),
+      contract.votingOpen(),
+      contract.candidates(),
+      contract.getResults(),
+    ]);
+
+    $('status').textContent = open ? 'Ouvert' : 'Fermé';
+    $('status').className = 'badge ' + (open ? 'ok' : 'muted');
+
+    // Owner UI
+    const isOwner = currentAccount && currentAccount.toLowerCase() === owner.toLowerCase();
+    $('ownerInfo').textContent = `Owner: ${owner}` + (isOwner ? ' (vous)' : '');
+    $('ownerActions').classList.toggle('hidden', !isOwner);
+
+    // Formulaire de vote
+    renderVoteForm(candidates, open);
+
+    // Résultats
+    renderResults(candidates, results);
+
+    // État de l'utilisateur
+    await updateVoteState();
+  }
+
+  function renderVoteForm(candidates, open) {
+    const container = $('voteForm');
+    container.innerHTML = '';
+    const disabled = !open;
+    candidates.forEach((name, i) => {
+      const id = `cand_${i}`;
+      const row = document.createElement('div');
+      row.innerHTML = `
+        <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
+          <input type="radio" name="candidate" value="${i}" id="${id}" ${disabled ? 'disabled' : ''} />
+          <span>${i}. ${name}</span>
+        </label>`;
+      container.appendChild(row);
+    });
+    $('voteBtn').classList.toggle('hidden', candidates.length === 0 || disabled);
+
+    container.querySelectorAll('input[name="candidate"]').forEach(el => {
+      el.addEventListener('change', (e) => { chosenIndex = parseInt(e.target.value, 10); });
+    });
+  }
+
+  function renderResults(candidates, results) {
+    const tbody = $('resultsBody');
+    tbody.innerHTML = '';
+    for (let i = 0; i < candidates.length; i++) {
+      const tr = document.createElement('tr');
+      const name = candidates[i];
+      const count = results[i] ? results[i].toString() : '0';
+      tr.innerHTML = `<td>${name}</td><td>${count}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function updateVoteState() {
+    if (!contract || !currentAccount) return;
+    const open = await contract.votingOpen();
+    const voted = await contract.hasVoted(currentAccount);
+    $('voteState').textContent = !open ? 'Le vote est fermé.' : (voted ? 'Vous avez déjà voté.' : 'Vous pouvez voter.');
+    $('voteBtn').disabled = (!open || voted);
+  }
+
+  async function doVote() {
+    $('errors').textContent = '';
+    if (chosenIndex === null) { alert('Choisis un candidat.'); return; }
+    try {
+      const tx = await contract.connect(signer).vote(BigInt(chosenIndex));
+      $('voteState').textContent = 'Transaction envoyée…';
+      await tx.wait();
+      await refreshResults();
+      await updateVoteState();
+      $('voteState').textContent = 'Vote enregistré ✅';
+    } catch (e) { showError(e); }
+  }
+
+  async function refreshResults() {
+    const [cands, res] = await Promise.all([contract.candidates(), contract.getResults()]);
+    renderResults(cands, res);
+  }
+
+  async function openVoting() { try { const tx = await contract.connect(signer).openVoting(); await tx.wait(); } catch (e) { showError(e); } }
+  async function closeVoting() { try { const tx = await contract.connect(signer).closeVoting(); await tx.wait(); } catch (e) { showError(e); } }
+
+  function showError(e) {
+    console.error(e);
+    const msg = e?.shortMessage || e?.message || String(e);
+    $('errors').textContent = msg;
+  }
+
+  // Bind UI
+  $('connectBtn').onclick = connect;
+  $('loadBtn').onclick = loadContract;
+  $('voteBtn').onclick = doVote;
+  $('openBtn').onclick = openVoting;
+  $('closeBtn').onclick = closeVoting;
+</script>
+</body>
+</html>
