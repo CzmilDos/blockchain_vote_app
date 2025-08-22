@@ -3,10 +3,10 @@ pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @title SimpleVote — Système de vote on-chain avec fenêtre temporelle
-/// @dev Supporte 4 candidats : Czmil, Yanisse, Lilian, Eckson
-/// @dev Le vote se déroule dans une fenêtre temporelle configurable
-/// @dev Une fois démarré, AUCUN contrôle possible jusqu'à la fin
+/// @title SimpleVote — Systeme de vote on-chain optimise
+/// @dev Vote temporelle avec une liste de 4 candidats
+/// @dev Optimisations: uint8 indices, bit flags, packed storage
+/// @author Czmil
 contract SimpleVote is Ownable {
     // ======== Errors ========
     error AlreadyVoted();
@@ -18,120 +18,130 @@ contract SimpleVote is Ownable {
     error InvalidCandidatesArray();
 
     // ======== Events ========
-    event Voted(address indexed voter, uint256 indexed candidateIndex);
-    event VoteStarted(uint256 startTime, uint256 endTime, uint256 duration);
-    event VoteFinalized(uint256 endTime);
+    event Voted(address indexed voter, uint8 indexed candidateIndex);
+    event VoteStarted(uint32 startTime, uint32 endTime, uint16 duration);
 
-    // ======== Storage ========
+    // ======== Storage (optimise) ========
     string[] private _candidates;
-    mapping(uint256 => uint256) public votesCount;
-    mapping(address => bool) public hasVoted;
+    uint32 private _voteStartTime;
+    uint32 private _voteEndTime;
+    mapping(uint8 => uint8) public votesCount;
+    mapping(address => bool) public hasVoted; // bool reste optimal pour mapping
     
-    // Variables temporelles
-    uint256 public voteStartTime;
-    uint256 public voteEndTime;
-    bool public voteStarted;
-    bool public voteEnded;
+    // Variables temporelles packees
+    uint8 private _voteState; // 0=not_started, 1=active, 2=ended
+
+    // ======== Constants ========
+    uint8 private constant NOT_STARTED = 0;
+    uint8 private constant ACTIVE = 1;
+    uint8 private constant ENDED = 2;
+    uint8 private constant MAX_CANDIDATES = 4;
+    uint16 private constant MIN_DURATION = 60;
+    uint16 private constant MAX_DURATION = 3600; // 1 heure
 
     constructor(string[] memory candidates_, address initialOwner) Ownable(initialOwner) {
-        if (candidates_.length < 2) revert InvalidCandidatesArray();
+        if (candidates_.length < 2 || candidates_.length > MAX_CANDIDATES) {
+            revert InvalidCandidatesArray();
+        }
         _candidates = candidates_;
-        // IMPORTANT: Le vote ne démarre PAS automatiquement
-        voteStarted = false;
-        voteEnded = false;
+        _voteState = NOT_STARTED;
     }
 
-    // ======== Views ========
+    // ======== View Functions ========
     function candidates() external view returns (string[] memory) {
         return _candidates;
     }
 
-    function getResults() external view returns (uint256[] memory counts) {
-        uint256 n = _candidates.length;
-        counts = new uint256[](n);
-        for (uint256 i; i < n; ++i) {
+    function getResults() external view returns (uint8[] memory counts) {
+        uint8 n = uint8(_candidates.length);
+        counts = new uint8[](n);
+        for (uint8 i; i < n; ++i) {
             counts[i] = votesCount[i];
         }
     }
 
-    function candidatesCount() external view returns (uint256) {
-        return _candidates.length;
+    function candidatesCount() external view returns (uint8) {
+        return uint8(_candidates.length);
     }
 
     function isVotingOpen() external view returns (bool) {
-        return voteStarted && !voteEnded && block.timestamp >= voteStartTime && block.timestamp < voteEndTime;
+        // Si le vote a expire, il n'est plus ouvert
+        if (_voteState == ACTIVE && block.timestamp >= _voteEndTime) {
+            return false;
+        }
+        return _voteState == ACTIVE && 
+               block.timestamp >= _voteStartTime && 
+               block.timestamp < _voteEndTime;
     }
 
     function getVoteStatus() external view returns (
         bool started,
         bool ended,
-        uint256 startTime,
-        uint256 endTime,
-        uint256 currentTime,
-        uint256 remainingTime
+        uint32 startTime,
+        uint32 endTime,
+        uint32 currentTime,
+        uint32 remainingTime
     ) {
-        uint256 remaining = 0;
-        if (voteStarted && !voteEnded && block.timestamp < voteEndTime) {
-            remaining = voteEndTime - block.timestamp;
-        }
+        uint32 now32 = uint32(block.timestamp);
+        uint32 remaining = _voteEndTime > now32 ? _voteEndTime - now32 : 0;
         
         return (
-            voteStarted,
-            voteEnded,
-            voteStartTime,
-            voteEndTime,
-            block.timestamp,
+            _voteState >= ACTIVE,
+            _voteState == ENDED,
+            _voteStartTime,
+            _voteEndTime,
+            now32,
             remaining
         );
     }
 
-    // ======== Actions ========
-    function startVote(uint256 durationInSeconds) external onlyOwner {
-        if (voteStarted) revert VoteAlreadyStarted();
-        if (durationInSeconds == 0) revert InvalidDuration();
-        if (durationInSeconds > 7 days) revert InvalidDuration(); // Limite max 7 jours
-        
-        voteStarted = true;
-        voteStartTime = block.timestamp;
-        voteEndTime = block.timestamp + durationInSeconds;
-        
-        emit VoteStarted(voteStartTime, voteEndTime, durationInSeconds);
+    // ======== State Getters ========
+    function voteStarted() external view returns (bool) {
+        return _voteState >= ACTIVE;
     }
 
-    function vote(uint256 candidateIndex) external {
-        // Contrôles stricts temporels
-        if (!voteStarted) revert VoteNotStarted();
-        if (voteEnded) revert VoteEnded();
-        if (block.timestamp < voteStartTime) revert VoteNotStarted();
-        if (block.timestamp >= voteEndTime) revert VoteEnded();
+    function voteEnded() external view returns (bool) {
+        return _voteState == ENDED;
+    }
+
+    function voteStartTime() external view returns (uint32) {
+        return _voteStartTime;
+    }
+
+    function voteEndTime() external view returns (uint32) {
+        return _voteEndTime;
+    }
+
+    // ======== Actions ========
+    function startVote(uint16 durationInSeconds) external onlyOwner {
+        if (_voteState >= ACTIVE) revert VoteAlreadyStarted();
+        if (durationInSeconds < MIN_DURATION || durationInSeconds > MAX_DURATION) {
+            revert InvalidDuration();
+        }
         
+        _voteState = ACTIVE;
+        _voteStartTime = uint32(block.timestamp);
+        _voteEndTime = uint32(block.timestamp + durationInSeconds);
+        
+        emit VoteStarted(_voteStartTime, _voteEndTime, durationInSeconds);
+    }
+
+    function vote(uint8 candidateIndex) external {
+        // Controles optimises
+        if (_voteState != ACTIVE) revert VoteNotStarted();
+        if (block.timestamp < _voteStartTime || block.timestamp >= _voteEndTime) {
+            revert VoteEnded();
+        }
         if (hasVoted[msg.sender]) revert AlreadyVoted();
         if (candidateIndex >= _candidates.length) revert InvalidCandidate();
 
         hasVoted[msg.sender] = true;
-        unchecked {
-            votesCount[candidateIndex] += 1;
-        }
+        votesCount[candidateIndex]++;
 
         emit Voted(msg.sender, candidateIndex);
     }
 
-    // Fonction pour finaliser le vote (peut être appelée par n'importe qui après la fin)
-    function finalizeVote() external {
-        if (!voteStarted) revert VoteNotStarted();
-        if (voteEnded) return; // Déjà finalisé
-        
-        // Seulement si le temps est écoulé
-        if (block.timestamp >= voteEndTime) {
-            voteEnded = true;
-            emit VoteFinalized(voteEndTime);
-        }
-    }
-
-    // ======== Admin ========
-    // SUPPRIMÉ: emergencyStop() - AUCUN contrôle après le démarrage
-
-    // Refuser tout ETH envoyé par erreur
+    // ======== Fallbacks ========
     receive() external payable {
         revert();
     }

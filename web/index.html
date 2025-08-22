@@ -1,388 +1,597 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vote on-chain — Système temporelle</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #e5e7eb; cursor: pointer; background: #fff; }
-    input[type="text"], input[type="number"] { width: 100%; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; }
-    .muted { color: #6b7280; }
-    .owner-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-    .hidden { display: none; }
-    .ok { color: #065f46; }
-    .err { color: #7f1d1d; }
-    .warning { color: #92400e; }
-    .badge { padding: 2px 8px; border-radius: 999px; border: 1px solid #e5e7eb; }
-    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0; }
-    .status-item { background: #f9fafb; padding: 12px; border-radius: 8px; }
-    .status-label { font-size: 0.9em; color: #6b7280; margin-bottom: 4px; }
-    .status-value { font-weight: bold; }
-    .vote-ended-message { color: #dc2626; font-weight: bold; font-size: 1.05em; margin: 12px 0; }
-    .info-note { margin-top: 8px; color: #374151; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:8px; padding:8px 10px; }
-  </style>
+    <title>SimpleVote — Système de vote on-chain optimisé</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.11.1/dist/ethers.umd.min.js"></script>
 </head>
 <body>
-  <h1>🗳️ Vote on-chain — Système temporelle</h1>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>SimpleVote</h1>
+            <p>Système de vote on-chain optimisé</p>
+        </header>
 
-  <div class="card">
-    <h2>1) Connexion</h2>
-    <p id="account" class="muted">Non connecté</p>
-    <button id="connectBtn">Se connecter avec MetaMask</button>
+        <!-- Connection Section -->
+        <section class="card glass">
+            <h2>I- Connexion</h2>
+            <div class="form-group">
+                <button id="connectBtn" class="btn">Se connecter avec MetaMask</button>
+                <div id="account" style="color: rgba(255, 255, 255, 0.7); margin-top: 0.5rem;">Non connecté</div>
+            </div>
+        </section>
+
+        <!-- Contract Loading -->
+        <section class="card glass">
+            <h2>II- Chargement du contrat</h2>
+            <div class="form-group">
+                <label for="contractAddress">Adresse du contrat :</label>
+                <input id="contractAddress" type="text" class="form-control" placeholder="0x..." />
+            </div>
+            <div id="ownerDisplay" style="color: rgba(255, 255, 255, 0.7); margin-top: 0.5rem;"></div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button id="loadBtn" class="btn btn-secondary">Charger</button>
+                <span id="status" style="color: rgba(255, 255, 255, 0.7);">—</span>
+  </div>
+        </section>
+
+        <!-- Vote Status -->
+        <section class="card glass">
+            <h2>III- État du vote</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <div class="status-label">État</div>
+                    <div id="voteState" class="status-value">—</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Temps restant</div>
+                    <div id="timeRemaining" class="status-value">—</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Début</div>
+                    <div id="startTime" class="status-value">—</div>
+    </div>
+                <div class="status-item">
+                    <div class="status-label">Fin</div>
+                    <div id="endTime" class="status-value">—</div>
+    </div>
   </div>
 
-  <div class="card">
-    <h2>2) Contrat</h2>
-    <label>Adresse du contrat :</label>
-    <input id="contractAddress" type="text" placeholder="0x..." />
-    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-      <button id="loadBtn">Charger</button>
-      <span id="status" class="badge muted">—</span>
+            <div id="ownerActions" style="display: none;">
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <input id="voteDuration" type="number" class="form-control" value="" min="60" max="3600" style="width: 220px;" placeholder="Durée en secondes" />
+                    <button id="startBtn" class="btn">Démarrer le vote</button>
+                </div>
+                <div id="durationWarning" class="message warning" style="display: none;"></div>
     </div>
-    <p id="ownerInfo" class="muted"></p>
+        </section>
+
+        <!-- Voting Section -->
+        <section class="card glass">
+            <h2>IV- Vote</h2>
+            <div id="voteForm" style="margin-bottom: 1rem;">
+                <div style="color: rgba(255, 255, 255, 0.7);">Chargez un contrat pour commencer</div>
   </div>
+            <div id="voteMessage" class="message info" style="display: none;"></div>
+            <button id="voteBtn" class="btn" style="display: none;">Voter</button>
+        </section>
 
-  <div class="card">
-    <h2>3) État du vote</h2>
-    <div class="status-grid">
-      <div class="status-item">
-        <div class="status-label">État</div>
-        <div id="voteState" class="status-value muted">—</div>
-      </div>
-      <div class="status-item">
-        <div class="status-label">Temps restant</div>
-        <div id="timeRemaining" class="status-value muted">—</div>
-      </div>
-      <div class="status-item">
-        <div class="status-label">Début</div>
-        <div id="startTime" class="status-value muted">—</div>
-      </div>
-      <div class="status-item">
-        <div class="status-label">Fin</div>
-        <div id="endTime" class="status-value muted">—</div>
-      </div>
-    </div>
-
-    <div id="ownerActions" class="owner-actions hidden">
-      <input id="voteDuration" type="number" value="3600" min="60" max="604800" />
-      <button id="startBtn">Démarrer le vote</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>4) Voter</h2>
-    <div id="voteForm">Charge le contrat pour voir les candidats.</div>
-    <div style="margin-top:8px;">
-      <button id="voteBtn" class="hidden">Voter</button>
-      <span id="voteMessage" class="muted"></span>
-    </div>
-    <p id="errors" class="err"></p>
-  </div>
-
-  <div class="card">
-    <h2>5) Résultats</h2>
-    <table>
-      <thead><tr><th>Candidat</th><th>Votes</th><th>Pourcentage</th></tr></thead>
-      <tbody id="resultsBody"><tr><td colspan="3" class="muted">—</td></tr></tbody>
+        <!-- Results -->
+        <section class="card glass">
+            <h2>V- Résultats</h2>
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>Candidats</th>
+                        <th>Votes</th>
+                        <th>Pourcentage</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                    <tr><td colspan="3" style="text-align: center; color: rgba(255, 255, 255, 0.7);">—</td></tr>
+                </tbody>
     </table>
+        </section>
+
+        <!-- Error Display -->
+        <div id="errors" class="message error" style="display: none;"></div>
   </div>
 
 <script>
-/* ===== ABI (contrat SimpleVote fourni) ===== */
-const ABI = [
-  {"type":"function","name":"candidates","inputs":[],"outputs":[{"type":"string[]"}],"stateMutability":"view"},
-  {"type":"function","name":"candidatesCount","inputs":[],"outputs":[{"type":"uint256"}],"stateMutability":"view"},
-  {"type":"function","name":"getResults","inputs":[],"outputs":[{"type":"uint256[]"}],"stateMutability":"view"},
-  {"type":"function","name":"hasVoted","inputs":[{"type":"address"}],"outputs":[{"type":"bool"}],"stateMutability":"view"},
-  {"type":"function","name":"owner","inputs":[],"outputs":[{"type":"address"}],"stateMutability":"view"},
+        // ======== Configuration ========
+  const ABI = [
+            {"type":"function","name":"candidates","inputs":[],"outputs":[{"type":"string[]"}],"stateMutability":"view"},
+            {"type":"function","name":"candidatesCount","inputs":[],"outputs":[{"type":"uint8"}],"stateMutability":"view"},
+            {"type":"function","name":"getResults","inputs":[],"outputs":[{"type":"uint8[]"}],"stateMutability":"view"},
+            {"type":"function","name":"hasVoted","inputs":[{"type":"address"}],"outputs":[{"type":"bool"}],"stateMutability":"view"},
+            {"type":"function","name":"owner","inputs":[],"outputs":[{"type":"address"}],"stateMutability":"view"},
+            {"type":"function","name":"isVotingOpen","inputs":[],"outputs":[{"type":"bool"}],"stateMutability":"view"},
+            {"type":"function","name":"getVoteStatus","inputs":[],"outputs":[
+                {"name":"started","type":"bool"},
+                {"name":"ended","type":"bool"},
+                {"name":"startTime","type":"uint32"},
+                {"name":"endTime","type":"uint32"},
+                {"name":"currentTime","type":"uint32"},
+                {"name":"remainingTime","type":"uint32"}],"stateMutability":"view"},
+            {"type":"function","name":"vote","inputs":[{"name":"candidateIndex","type":"uint8"}],"outputs":[],"stateMutability":"nonpayable"},
+            {"type":"function","name":"startVote","inputs":[{"name":"durationInSeconds","type":"uint16"}],"outputs":[],"stateMutability":"nonpayable"},
+            {"type":"event","name":"Voted","inputs":[{"name":"voter","type":"address","indexed":true},{"name":"candidateIndex","type":"uint8","indexed":true}],"anonymous":false},
+            {"type":"event","name":"VoteStarted","inputs":[{"name":"startTime","type":"uint32"},{"name":"endTime","type":"uint32"},{"name":"duration","type":"uint16"}],"anonymous":false}
+        ];
 
-  {"type":"function","name":"isVotingOpen","inputs":[],"outputs":[{"type":"bool"}],"stateMutability":"view"},
-  {"type":"function","name":"getVoteStatus","inputs":[],"outputs":[
-    {"name":"started","type":"bool"},
-    {"name":"ended","type":"bool"},
-    {"name":"startTime","type":"uint256"},
-    {"name":"endTime","type":"uint256"},
-    {"name":"currentTime","type":"uint256"},
-    {"name":"remainingTime","type":"uint256"}],"stateMutability":"view"},
+        // ======== State Management ========
+  let provider, signer, contract;
+        let currentAccount = null;
+        let timerInterval = null;
+        let selectedCandidate = null;
 
-  {"type":"function","name":"vote","inputs":[{"name":"candidateIndex","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"startVote","inputs":[{"name":"durationInSeconds","type":"uint256"}],"outputs":[],"stateMutability":"nonpayable"},
-  {"type":"function","name":"finalizeVote","inputs":[],"outputs":[],"stateMutability":"nonpayable"},
+        // Cache pour optimiser les performances
+        let cachedState = {
+            started: false,
+            ended: false,
+            isOpen: false,
+            startTime: 0n,
+            endTime: 0n,
+            isOwner: false
+        };
 
-  {"type":"event","name":"Voted","inputs":[{"name":"voter","type":"address","indexed":true},{"name":"candidateIndex","type":"uint256","indexed":true}],"anonymous":false},
-  {"type":"event","name":"VoteStarted","inputs":[{"name":"startTime","type":"uint256"},{"name":"endTime","type":"uint256"},{"name":"duration","type":"uint256"}],"anonymous":false},
-  {"type":"event","name":"VoteFinalized","inputs":[{"name":"endTime","type":"uint256"}],"anonymous":false}
-];
+        // ======== DOM Utilities ========
+        const $ = id => document.getElementById(id);
+        const showError = (message) => {
+            const errorEl = $('errors');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => errorEl.style.display = 'none', 5000);
+        };
 
-/* ===== State ===== */
-let provider, signer, contract;
-let currentAccount = null;
-let timerInterval = null;
-let chainOffsetSec = 0; // décalage horloge locale vs horloge de la chaîne
+        const showMessage = (elementId, message, type = 'info') => {
+            const el = $(elementId);
+            el.textContent = message;
+            el.className = `message ${type}`;
+            el.style.display = 'block';
+        };
 
-// cache “global” pour le rendu
-let cachedStarted=false, cachedEnded=false, cachedOpen=false;
-let cachedStart=0n, cachedEnd=0n;
-let isOwnerCached=false;
+        // ======== Time Utilities ========
+        const formatTime = (seconds) => {
+            if (seconds <= 0) return 'Terminé';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h}h ${m}m ${s}s`;
+        };
 
-const $ = id => document.getElementById(id);
+        const formatTimestamp = (timestamp) => {
+            return timestamp ? new Date(Number(timestamp) * 1000).toLocaleString('fr-FR') : '—';
+        };
 
-/* ===== Utils ===== */
-function prettyError(e){ return e?.shortMessage || e?.message || String(e); }
-function formatTs(ts){ return ts ? new Date(Number(ts)*1000).toLocaleString('fr-FR') : '—'; }
-function nowChainSeconds(){ return BigInt(Math.floor(Date.now()/1000)); }
-function locallyOpen(){ return cachedStarted && !cachedEnded && nowChainSeconds() < cachedEnd && nowChainSeconds() >= cachedStart; }
+        // ======== Connection Management ========
+  async function connect() {
+            try {
+                if (!window.ethereum) {
+                    throw new Error('MetaMask non détecté. Veuillez installer MetaMask.');
+                }
 
-function notifyEndedMessage() {
-  const container = $('voteForm');
-  if (!container.querySelector('.vote-ended-message')) {
-    container.insertAdjacentHTML('beforeend',
-      '<div class="vote-ended-message">🛑 Le vote est terminé, vous ne pouvez plus voter.</div>');
-  }
-}
+    provider = new ethers.BrowserProvider(window.ethereum);
+                await provider.send('eth_requestAccounts', []);
+    signer = await provider.getSigner();
+                currentAccount = await signer.getAddress();
 
-/* ===== Connexion ===== */
-async function connect() {
-  if (!window.ethereum) { alert('Installe MetaMask.'); return; }
-  provider = new ethers.BrowserProvider(window.ethereum);
-  await provider.send('eth_requestAccounts', []);
-  signer = await provider.getSigner();
-  currentAccount = await signer.getAddress();
-  $('account').textContent = `Connecté: ${currentAccount}`;
+    $('account').textContent = `Connecté: ${currentAccount}`;
+                $('account').className = 'text-success';
 
-  // Écoute les changements compte / réseau
-  if (window.ethereum && window.ethereum.on) {
-    window.ethereum.on('accountsChanged', async (accs) => {
-      currentAccount = accs && accs[0] ? accs[0] : null;
-      try { signer = await provider.getSigner(); } catch { signer = null; }
-      $('account').textContent = currentAccount ? `Connecté: ${currentAccount}` : 'Non connecté';
-      if (timerInterval) clearInterval(timerInterval);
+                // Écoute les changements de compte/réseau
+                window.ethereum.on('accountsChanged', handleAccountChange);
+                window.ethereum.on('chainChanged', () => location.reload());
+
+                if (contract) {
+                    await refreshState();
+                }
+            } catch (error) {
+                showError(`Erreur de connexion: ${error.message}`);
+            }
+        }
+
+        async function handleAccountChange(accounts) {
+            currentAccount = accounts && accounts[0] ? accounts[0] : null;
+            try {
+                signer = await provider.getSigner();
+            } catch {
+                signer = null;
+            }
+            
+            $('account').textContent = currentAccount ? `Connecté: ${currentAccount}` : 'Non connecté';
+            $('account').style.color = currentAccount ? '#22c55e' : 'rgba(255, 255, 255, 0.7)';
+            
+            if (timerInterval) clearInterval(timerInterval);
+            if (contract) await refreshState();
+        }
+
+        // ======== Contract Management ========
+  async function loadContract() {
+            try {
+                const address = $('contractAddress').value.trim();
+                if (!address) {
+                    throw new Error('Veuillez entrer une adresse de contrat.');
+                }
+
+                contract = new ethers.Contract(address, ABI, signer ?? provider);
+                
+                // Test de connexion au contrat
+                await contract.candidatesCount();
+                
+                $('status').textContent = 'Contrat chargé';
+                $('status').style.color = '#22c55e';
+                
       await refreshState();
-    });
-    window.ethereum.on('chainChanged', () => location.reload());
-  }
-}
-
-/* ===== Chargement contrat ===== */
-async function loadContract() {
-  const addr = $('contractAddress').value.trim();
-  if (!addr) { alert('Entre une adresse de contrat'); return; }
-  try {
-    contract = new ethers.Contract(addr, ABI, signer ?? provider);
-    $('status').textContent = 'chargé';
-    await refreshState();
-    bindEvents();
-  } catch (e) { showError(e); }
-}
-
-function bindEvents() {
-  if (!contract) return;
-  contract.on('Voted', () => { refreshResults(); updateVoteState(); });
-  contract.on('VoteStarted', refreshState);
-  contract.on('VoteFinalized', refreshState);
-}
-
-/* ===== Timer ===== */
-function startLocalTimer() {
-  if (timerInterval) clearInterval(timerInterval);
-  timerInterval = setInterval(updateTimer, 1000);
-  updateTimer();
-}
-
-function updateTimer() {
-  // si pas démarré
-  if (!cachedStarted) {
-    $('timeRemaining').textContent = 'Non démarré';
-    $('timeRemaining').className = 'status-value muted';
-    return;
-  }
-  // si terminé
-  if (cachedEnded || nowChainSeconds() >= cachedEnd) {
-    $('timeRemaining').textContent = 'Terminé';
-    $('timeRemaining').className = 'status-value err';
-    $('voteState').textContent = 'Terminé';
-    $('voteState').className = 'status-value err';
-    $('voteBtn').disabled = true;
-    document.querySelectorAll('input[name="candidate"]').forEach(i => i.disabled = true);
-    notifyEndedMessage();
-    return;
-  }
-  // en cours
-  const remain = Number(cachedEnd - nowChainSeconds());
-  const h = Math.floor(remain/3600), m = Math.floor((remain%3600)/60), s = remain%60;
-  $('timeRemaining').textContent = `${h}h ${m}m ${s}s`;
-  $('timeRemaining').className = 'status-value ' + (remain < 300 ? 'err' : remain < 1800 ? 'warning' : 'ok');
-}
-
-/* ===== Rendu principal ===== */
-async function refreshState() {
-  if (!contract) return;
-  try {
-    // On lit l'état mais on ne recale plus l'horloge sur la chaîne
-    const [status, ownerAddr] = await Promise.all([
-      contract.getVoteStatus(),
-      contract.owner()
-    ]);
-    const [started, ended, st, et] = status;
-
-    // mets à jour le cache
-    cachedStarted = started;
-    cachedEnded   = ended;
-    cachedStart   = BigInt(st);
-    cachedEnd     = BigInt(et);
-
-    const isOpen = await contract.isVotingOpen();
-    cachedOpen = isOpen;
-
-    // owner
-    isOwnerCached = !!currentAccount && currentAccount.toLowerCase() === ownerAddr.toLowerCase();
-    $('ownerInfo').textContent = `Owner: ${ownerAddr}` + (isOwnerCached ? ' (vous)' : '');
-    // visible seulement pour l’owner
-    $('ownerActions').classList.toggle('hidden', !isOwnerCached);
-    // et grisé si déjà démarré
-    $('startBtn').disabled = !!cachedStarted;
-    $('voteDuration').disabled = !!cachedStarted;
-
-    // état texte
-    let stateText='', stateClass='';
-    if (!started) { stateText='En attente'; stateClass='muted'; }
-    else if (ended || nowChainSeconds() >= cachedEnd) { stateText='Terminé'; stateClass='err'; }
-    else if (isOpen) { stateText='En cours'; stateClass='ok'; }
-    else { stateText='Expiré'; stateClass='warning'; }
-
-    $('voteState').textContent = stateText;
-    $('voteState').className = `status-value ${stateClass}`;
-    $('startTime').textContent = formatTs(st);
-    $('endTime').textContent   = formatTs(et);
-
-    // formulaire + résultats + état utilisateur
-    const [cands, res] = await Promise.all([contract.candidates(), contract.getResults()]);
-    renderVoteForm(cands, isOpen);
-    renderResults(cands, res);
-    await updateVoteState();
-
-    // timer local
-    startLocalTimer();
-
-  } catch (e) { showError(e); }
-}
-
-/* ===== Formulaire de vote ===== */
-function renderVoteForm(candidates, open) {
-  const container = $('voteForm');
-  container.innerHTML = '';
-
-  if (!cachedStarted) {
-    if (isOwnerCached) {
-      container.innerHTML = '<div class="muted">Le vote n’a pas encore démarré. Définissez une durée puis cliquez sur “Démarrer le vote”.</div>';
-    } else {
-      container.innerHTML = '<div class="muted">Le vote n’a pas encore démarré.</div><div class="info-note">ℹ️ Seul le <strong>owner</strong> peut démarrer le vote.</div>';
+      bindEvents();
+            } catch (error) {
+                showError(`Erreur de chargement: ${error.message}`);
+                $('status').textContent = 'Erreur';
+                $('status').style.color = '#ef4444';
     }
-    $('voteBtn').classList.add('hidden');
-    return;
   }
 
-  if (cachedEnded || nowChainSeconds() >= cachedEnd) {
-    $('voteBtn').classList.add('hidden');
-    notifyEndedMessage();
-    return;
+  function bindEvents() {
+    if (!contract) return;
+            
+            contract.on('Voted', () => {
+                refreshResults();
+                updateVoteState();
+            });
+            contract.on('VoteStarted', refreshState);
+        }
+
+        // ======== State Refresh ========
+  async function refreshState() {
+    if (!contract) return;
+            
+            try {
+                const [status, ownerAddr] = await Promise.all([
+                    contract.getVoteStatus(),
+                    contract.owner()
+                ]);
+
+                const [started, ended, startTime, endTime] = status;
+                
+                // Mise à jour du cache
+                cachedState = {
+                    started,
+                    ended,
+                    startTime: BigInt(startTime),
+                    endTime: BigInt(endTime),
+                    isOwner: !!currentAccount && currentAccount.toLowerCase() === ownerAddr.toLowerCase()
+                };
+
+                // Mise à jour de l'interface
+                updateStatusDisplay(status);
+                updateOwnerInterface();
+                
+                // Chargement des données
+                const [candidates, results] = await Promise.all([
+      contract.candidates(),
+                    contract.getResults()
+                ]);
+                
+                renderVoteForm(candidates, status);
+                renderResults(candidates, results);
+                await updateVoteState();
+                
+                // Démarrage du timer
+                startTimer();
+                
+                // Affichage de l'owner
+                const ownerDisplay = $('ownerDisplay');
+                if (ownerDisplay) {
+                    if (currentAccount && ownerAddr && currentAccount.toLowerCase() === ownerAddr.toLowerCase()) {
+                        ownerDisplay.textContent = `Owner: ${ownerAddr} (vous)`;
+                    } else {
+                        ownerDisplay.textContent = `Owner: ${ownerAddr}`;
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Erreur refreshState:', error);
+                showError(`Erreur de mise à jour: ${error.message}`);
+            }
+        }
+
+        function updateStatusDisplay(status) {
+            const [started, ended, startTime, endTime] = status;
+            const now = Math.floor(Date.now() / 1000);
+            
+            // État du vote
+            let stateText, stateClass;
+            if (!started) {
+                stateText = 'En attente';
+                stateClass = 'muted';
+            } else if (ended || now >= Number(endTime)) {
+                stateText = 'Terminé';
+                stateClass = 'err';
+            } else {
+                stateText = 'En cours';
+                stateClass = 'ok';
+            }
+            $('voteState').textContent = stateText;
+            $('voteState').className = `status-value ${stateClass}`;
+            
+            // Timestamps - Gestion intelligente selon l'état du vote
+            console.log('Timestamps from contract:', { startTime: Number(startTime), endTime: Number(endTime), now });
+            
+            if (!started) {
+                // Si le vote n'a pas démarré, afficher des messages appropriés
+                $('startTime').textContent = '-';
+                $('startTime').className = 'status-value undefined';
+                $('endTime').textContent = '-';
+                $('endTime').className = 'status-value undefined';
+            } else if (Number(startTime) < 1000000000 || Number(endTime) < 1000000000) {
+                // Si les timestamps sont invalides (trop petits)
+                $('startTime').textContent = 'Erreur timestamp';
+                $('endTime').textContent = 'Erreur timestamp';
+                console.error('Timestamps invalides:', { startTime: Number(startTime), endTime: Number(endTime) });
+            } else {
+                // Timestamps valides
+                $('startTime').textContent = formatTimestamp(startTime);
+                $('startTime').className = 'status-value';
+                $('endTime').textContent = formatTimestamp(endTime);
+                $('endTime').className = 'status-value';
+            }
+        }
+
+        function updateOwnerInterface() {
+            $('ownerActions').style.display = cachedState.isOwner ? 'block' : 'none';
+            
+            if (cachedState.isOwner) {
+                $('startBtn').disabled = cachedState.started;
+                $('voteDuration').disabled = cachedState.started;
+            }
+        }
+
+        // ======== Timer Management ========
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(updateTimer, 1000);
+            updateTimer();
+        }
+
+        function updateTimer() {
+            if (!cachedState.started) {
+                $('timeRemaining').textContent = 'Non démarré';
+                $('timeRemaining').className = 'status-value';
+                $('timeRemaining').style.color = 'rgba(255, 255, 255, 0.7)';
+                return;
+            }
+
+            if (cachedState.ended) {
+                $('timeRemaining').textContent = 'Terminé';
+                $('timeRemaining').className = 'status-value';
+                $('timeRemaining').style.color = '#ef4444';
+                return;
+            }
+
+            // Vérification des timestamps
+            if (Number(cachedState.endTime) < 1000000000) {
+                $('timeRemaining').textContent = 'Erreur timestamp';
+                $('timeRemaining').className = 'status-value';
+                $('timeRemaining').style.color = '#ef4444';
+                console.error('Timestamp de fin invalide:', Number(cachedState.endTime));
+                return;
+            }
+
+            const now = Math.floor(Date.now() / 1000);
+            const remaining = Number(cachedState.endTime) - now;
+
+            if (remaining <= 0) {
+                $('timeRemaining').textContent = 'Expiré';
+                $('timeRemaining').className = 'status-value';
+                $('timeRemaining').style.color = '#ef4444';
+                
+                // Rafraîchir l'état pour détecter l'expiration
+                refreshState();
+            } else {
+                $('timeRemaining').textContent = formatTime(remaining);
+                $('timeRemaining').className = 'status-value';
+                if (remaining < 300) {
+                    $('timeRemaining').style.color = '#ef4444';
+                } else if (remaining < 1800) {
+                    $('timeRemaining').style.color = '#f59e0b';
+                } else {
+                    $('timeRemaining').style.color = '#22c55e';
+                }
+            }
+        }
+
+        // ======== UI Rendering ========
+        function renderVoteForm(candidates, status) {
+    const container = $('voteForm');
+    container.innerHTML = '';
+            const [started, ended, startTime, endTime, currentTime] = status;
+            if (!started) {
+                if (cachedState.isOwner) {
+                    container.innerHTML = '<div style="color: rgba(255, 255, 255, 0.7);">Le vote n\'a pas encore démarré. Définissez une durée puis cliquez sur "Démarrer le vote".</div>';
+                } else {
+                    container.innerHTML = '<div style="color: rgba(255, 255, 255, 0.7);">Le vote n\'a pas encore démarré.</div><div class="message info">ℹ️ Seul le <strong>owner</strong> peut démarrer le vote.</div>';
+                }
+                $('voteBtn').style.display = 'none';
+                return;
+            }
+            // Rendu des options de vote
+    candidates.forEach((name, i) => {
+                const option = document.createElement('div');
+                option.className = 'candidate-option';
+                option.innerHTML = `
+                    <input type="radio" name="candidate" value="${i}" id="cand_${i}" />
+                    <label for="cand_${i}">${i}. ${name}</label>
+                `;
+                container.appendChild(option);
+            });
+            // Gestion des événements
+            container.querySelectorAll('input[name="candidate"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    selectedCandidate = parseInt(e.target.value, 10);
+                });
+            });
+            $('voteBtn').style.display = 'inline-flex';
   }
 
-  const disabled = !open;
-  candidates.forEach((name, i) => {
-    const row = document.createElement('div');
-    row.innerHTML = `
-      <label style="display:flex; align-items:center; gap:8px; margin:6px 0;">
-        <input type="radio" name="candidate" value="${i}" ${disabled?'disabled':''} />
-        <span>${i}. ${name}</span>
-      </label>`;
-    container.appendChild(row);
-  });
-  $('voteBtn').classList.toggle('hidden', candidates.length === 0 || disabled);
-  container.querySelectorAll('input[name="candidate"]').forEach(el => {
-    el.addEventListener('change', e => { window.chosenIndex = parseInt(e.target.value, 10); });
-  });
-}
+  function renderResults(candidates, results) {
+    const tbody = $('resultsBody');
+    tbody.innerHTML = '';
 
-/* ===== Résultats ===== */
-function renderResults(candidates, results) {
-  const tbody = $('resultsBody');
-  tbody.innerHTML = '';
-  const total = results.reduce((s, x) => s + Number(x), 0);
-  for (let i=0; i<candidates.length; i++) {
-    const count = Number(results[i]||0);
-    const pct = total>0 ? ((count/total)*100).toFixed(1) : '0.0';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${candidates[i]}</td><td>${count}</td><td>${pct}%</td>`;
-    tbody.appendChild(tr);
+            const total = results.reduce((sum, count) => sum + Number(count), 0);
+
+            candidates.forEach((name, i) => {
+      const tr = document.createElement('tr');
+                const count = Number(results[i] || 0);
+                const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+                
+                tr.innerHTML = `
+                    <td>${name}</td>
+                    <td>${count}</td>
+                    <td>${percentage}%</td>
+                `;
+      tbody.appendChild(tr);
+            });
   }
-}
 
-/* ===== État utilisateur ===== */
-async function updateVoteState() {
-  if (!contract || !currentAccount) return;
-  try {
-    const [isOpen, voted] = await Promise.all([contract.isVotingOpen(), contract.hasVoted(currentAccount)]);
-    let msg = '';
-    // if (!cachedStarted) msg = '';
-    if (cachedEnded || nowChainSeconds() >= cachedEnd) msg = 'Le vote est terminé.';
-    else if (!isOpen) msg = 'Le vote n’est pas ouvert.';
-    else if (voted) msg = 'Vote enregistré ✅';
-    else msg = 'Vous pouvez voter.';
-    $('voteMessage').textContent = msg;
+  async function updateVoteState() {
+    if (!contract || !currentAccount) return;
 
-    const disableAll = (!isOpen || voted || cachedEnded || nowChainSeconds() >= cachedEnd);
-    $('voteBtn').disabled = disableAll;
-    document.querySelectorAll('input[name="candidate"]').forEach(i => i.disabled = disableAll);
-  } catch(e) { console.error(e); }
-}
+            try {
+                const [isOpen, voted] = await Promise.all([
+                    contract.isVotingOpen(),
+                    contract.hasVoted(currentAccount)
+                ]);
 
-/* ===== Actions ===== */
-async function doVote() {
-  $('errors').textContent = '';
-  const chosenIndex = window.chosenIndex ?? null;
-  if (chosenIndex === null) { alert('Choisis un candidat.'); return; }
-  try {
-    const tx = await contract.connect(signer).vote(BigInt(chosenIndex));
-    $('voteMessage').textContent = 'Transaction envoyée…';
-    await tx.wait();
-    await refreshState();
-    if (!locallyOpen()) notifyEndedMessage();
-    $('voteMessage').textContent = 'Vote enregistré ✅';
-  } catch (e) { showError(e); }
-}
+                const voteMsgEl = $('voteMessage');
 
-async function startVote() {
-  const duration = parseInt($('voteDuration').value, 10);
-  if (!Number.isFinite(duration) || duration < 60 || duration > 604800) {
-    alert('La durée doit être entre 60 secondes et 7 jours.');
-    return;
+                /* 🔧 FIX ICI : ne rien afficher si le vote n'a pas démarré */
+                if (!cachedState.started) {
+                    voteMsgEl.style.display = 'none';
+                    voteMsgEl.textContent = '';
+                    $('voteBtn').disabled = true;
+                    document.querySelectorAll('input[name="candidate"]').forEach(r => r.disabled = true);
+                    return;
+                }
+
+                let message = '';
+                let messageType = 'info';
+                const now = Math.floor(Date.now() / 1000);
+
+                // Vérification des timestamps invalides
+                if (Number(cachedState.endTime) < 1000000000) {
+                    message = '⚠️ Erreur de timestamp détectée';
+                    messageType = 'warning';
+                } else if (cachedState.started && (cachedState.ended || now >= Number(cachedState.endTime))) {
+                    message = '🛑 Le vote est terminé, vous ne pouvez plus voter.';
+                    messageType = 'error';
+                } else if (voted) {
+                    message = 'Vous avez déjà voté.';
+                    messageType = 'warning';
+                } else if (!isOpen) {
+                    message = 'Le vote n\'est pas ouvert.';
+                    messageType = 'warning';
+                } else {
+                    message = 'Vous pouvez voter.';
+                    messageType = 'info';
+                }
+
+                showMessage('voteMessage', message, messageType);
+
+                const disableVoting = (!isOpen || voted || (cachedState.started && (cachedState.ended || now >= Number(cachedState.endTime))));
+                $('voteBtn').disabled = disableVoting;
+                
+                document.querySelectorAll('input[name="candidate"]').forEach(radio => {
+                    radio.disabled = disableVoting;
+                });
+
+            } catch (error) {
+                console.error('Erreur updateVoteState:', error);
+            }
+        }
+
+        // ======== Actions ========
+  async function doVote() {
+            if (selectedCandidate === null) {
+                showError('Veuillez sélectionner un candidat.');
+                return;
+            }
+
+            try {
+                showMessage('voteMessage', 'Transaction en cours...', 'info');
+                
+                const tx = await contract.connect(signer).vote(selectedCandidate);
+                await tx.wait();
+                
+                await refreshState();
+                showMessage('voteMessage', 'Vote enregistré ✅', 'success');
+                
+            } catch (error) {
+                showError(`Erreur de vote: ${error.message}`);
+            }
+        }
+
+        function showDurationWarning(message) {
+            let warn = document.getElementById('durationWarning');
+            if (!warn) {
+                warn = document.createElement('div');
+                warn.id = 'durationWarning';
+                warn.className = 'message warning';
+                const parent = document.getElementById('ownerActions')?.parentNode;
+                if (parent) parent.insertBefore(warn, document.getElementById('ownerActions').nextSibling);
+            }
+            warn.textContent = message;
+            warn.style.display = 'block';
+            warn.scrollIntoView({behavior: 'smooth', block: 'center'});
+        }
+
+        async function startVote() {
+            const durationStr = $('voteDuration').value;
+            const duration = parseInt(durationStr, 10);
+            if (!durationStr || !Number.isFinite(duration) || duration < 60 || duration > 3600) {
+                showDurationWarning('La durée doit être entre 60 secondes et 1 heure.');
+                return;
+            } else {
+                const warn = document.getElementById('durationWarning');
+                if (warn) warn.style.display = 'none';
+            }
+            try {
+                showMessage('voteMessage', 'Démarrage du vote...', 'info');
+                const tx = await contract.connect(signer).startVote(duration);
+      await tx.wait();
+                await refreshState();
+                showMessage('voteMessage', 'Vote démarré ✅', 'success');
+            } catch (error) {
+                showError(`Erreur de démarrage: ${error.message}`);
+            }
   }
-  try {
-    const tx = await contract.connect(signer).startVote(BigInt(duration));
-    $('voteMessage').textContent = 'Démarrage du vote…';
-    await tx.wait();
-    await refreshState();
-    $('voteMessage').textContent = 'Vote démarré ✅';
-  } catch (e) { showError(e); }
-}
 
-/* ===== Helpers ===== */
-function showError(e) {
-  console.error(e);
-  $('errors').textContent = prettyError(e);
-}
+  async function refreshResults() {
+            if (!contract) return;
+            
+            try {
+                const [candidates, results] = await Promise.all([
+                    contract.candidates(),
+                    contract.getResults()
+                ]);
+                renderResults(candidates, results);
+            } catch (error) {
+                console.error('Erreur refreshResults:', error);
+            }
+        }
 
-/* ===== Bind UI ===== */
-$('connectBtn').onclick = connect;
-$('loadBtn').onclick    = loadContract;
-$('voteBtn').onclick    = doVote;
-$('startBtn').onclick   = startVote;
+        // ======== Event Listeners ========
+        $('connectBtn').addEventListener('click', connect);
+        $('loadBtn').addEventListener('click', loadContract);
+        $('voteBtn').addEventListener('click', doVote);
+        $('startBtn').addEventListener('click', startVote);
+
+        // ======== Initialization ========
+        console.log('SimpleVote DApp initialisée');
 </script>
 </body>
 </html>

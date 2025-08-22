@@ -1,7 +1,60 @@
 [profile.default]
-solc_version = "0.8.24"
-optimizer = true
-optimizer_runs = 200
 src = "contracts"
 out = "out"
 libs = ["lib"]
+test = "test"
+script = "script"
+cache_path = "cache_forge"
+out_path = "out"
+lib_path = "lib"
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "@forge-std/=lib/forge-std/src/",
+    "@ds-test/=lib/forge-std/lib/ds-test/src/",
+]
+
+# Optimisations de compilation
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+
+# Paramètres de gas
+gas_reports = ["*"]
+gas_reports_ignore = []
+
+# Paramètres de test
+fuzz = { runs = 1000 }
+invariant = { runs = 1000, depth = 15, fail_on_revert = false }
+
+# Paramètres de sécurité
+strict = true
+bytecode_hash = "none"
+
+# Paramètres de debug
+verbosity = 2
+ffi = false
+
+# Paramètres de cache
+cache = true
+force = false
+
+# Paramètres de formatage
+fmt = { line_length = 120, tab_width = 4, bracket_spacing = false }
+
+# Profile pour les tests de gas
+[profile.gas]
+fuzz = { runs = 100 }
+invariant = { runs = 100, depth = 10 }
+
+# Profile pour la production
+[profile.production]
+optimizer_runs = 1000000
+via_ir = true
+bytecode_hash = "ipfs"
+
+# Profile pour le développement
+[profile.dev]
+optimizer = false
+optimizer_runs = 0
+via_ir = false
