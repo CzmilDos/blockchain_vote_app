@@ -206,7 +206,7 @@ contract = new ethers.Contract(address, ABI, signer);
 ---
 
 🎥 **Voir la démonstration vidéo complète :**  
-[Demo vidéo (demo.mp4)](../captures/demo.mp4)
+[Demo vidéo (demo.mp4)](captures/demo.mp4)
 
 ### Métriques de Performance
 - **Déploiement** : ~200k gas
